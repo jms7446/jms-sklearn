@@ -1,3 +1,7 @@
+import numpy as np
+
+import src.functions as functions
+
 
 class LogisticRegression(object):
 
@@ -16,6 +20,9 @@ class LogisticRegression(object):
         self.verbose = 0
         self.warm_start = False
         self.n_jobs = 1
+
+        self.w = None
+        self.b = None
 
         self.coef_ = None
         self.intercept_ = None
@@ -36,23 +43,45 @@ class LogisticRegression(object):
         Returns
         -------
         self : object
-            Returns self.
+            Returns self
         """
+        if self.solver == "gd" and sample_weight is None:
+            self._fit_gd(X, y)
         return self
 
-    def get_params(self, deep=True):
-        """Get parameters for this estimator.
-        Parameters
-        ----------
-        deep : boolean, optional
-            If True, will return the parameters for this estimator and
-            contained subobjects that are estimators.
-        Returns
-        -------
-        params : mapping of string to any
-            Parameter names mapped to their values.
-        """
-        pass
+    def _fit_gd(self, X, y):
+        """y는 0 or 1"""
+
+        learning_rate = 0.01
+        C = self.C
+        X = np.array(X)
+        y = np.array(y)
+        m, n = X.shape
+        w = np.zeros(n)
+        b = np.zeros(1)
+
+        pre_loss = np.inf
+        for i in range(self.max_iter * 1000):
+            z = np.dot(X, w) + b
+            h = 1.0 / (1.0 + np.exp(-z))
+            grad_z = (h - y)
+            grad_b = np.sum(grad_z)
+            grad_w = np.dot(X.transpose(), grad_z)
+            w -= learning_rate * (C * grad_w + w) / m
+            b -= learning_rate * grad_b / m
+            loss = functions.calc_reg_penalty(w, self.penalty) + C * functions.calc_cross_entropy(y, h)
+            if np.abs(pre_loss - loss) <= self.tol * 0.00001:
+                if self.verbose:
+                    print("loss diff : {}, break ({}th iteration".format(pre_loss - loss, i))
+                break
+            pre_loss = loss
+            # if i % 100 == 0:
+            #     print("{:5d} loss : {}".format(i, loss))
+
+        self.w = w
+        self.b = b
+        self.coef_ = w.reshape(1, n)
+        self.intercept_ = b
 
     def predict(self, X):
         """Predict class labels for samples in X.
@@ -65,7 +94,7 @@ class LogisticRegression(object):
         C : array, shape = [n_samples]
             Predicted class label per sample.
         """
-        pass
+        return np.argmax(self.predict_proba(X), axis=1)
 
     def predict_log_proba(self, X):
         """Log of probability estimates.
@@ -80,7 +109,7 @@ class LogisticRegression(object):
             Returns the log-probability of the sample for each class in the
             model, where classes are ordered as they are in ``self.classes_``.
         """
-        pass
+        return np.log(self.predict_proba(X))
 
     def predict_proba(self, X):
         """Probability estimates.
@@ -101,6 +130,10 @@ class LogisticRegression(object):
             Returns the probability of the sample for each class in the model,
             where classes are ordered as they are in ``self.classes_``.
         """
+        X = np.array(X)
+        z = np.dot(X, self.w) + self.b
+        h = functions.sigmoid(z)
+        return np.array([1 - h, h]).transpose()
 
     def score(self, X, y, sample_weight=None):
         """Returns the mean accuracy on the given test data and labels.
@@ -120,4 +153,12 @@ class LogisticRegression(object):
         score : float
             Mean accuracy of self.predict(X) wrt. y.
         """
-        pass
+        if sample_weight is None:
+            return np.mean((self.predict(X) == y).astype(float))
+
+    @staticmethod
+    def calc_cross_entropy_with_weight(X, y, w, b):
+        z = np.dot(X, w) + b
+        h = functions.sigmoid(z)
+        loss = functions.calc_cross_entropy(y, h)
+        return loss
